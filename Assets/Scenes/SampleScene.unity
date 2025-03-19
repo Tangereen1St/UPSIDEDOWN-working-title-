@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 2100000, guid: ace689db54d6bf840947f5420525f35f, type: 2}
+  m_SkyboxMaterial: {fileID: 2100000, guid: d8751cc6fa1d7974180dda3746902254, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -364,7 +364,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 121996062}
-  - component: {fileID: 121996061}
   m_Layer: 0
   m_Name: DayNightCycle
   m_TagString: Untagged
@@ -372,38 +371,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &121996061
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 121996060}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 77e456a77b945a744ac526b86db5a95d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  timeOfDay: 9.8
-  timeScale: 1
-  freezeTime: 0
-  directionalLight: {fileID: 410087040}
-  maxSunIntensity: 2
-  minSunIntensity: 0.1
-  dayColor: {r: 1, g: 1, b: 1, a: 1}
-  sunriseColor: {r: 1, g: 0.8, b: 0.5, a: 1}
-  sunsetColor: {r: 1, g: 0.5, b: 0, a: 1}
-  nightColor: {r: 0.1, g: 0.1, b: 0.3, a: 1}
-  daySkybox: {fileID: 2100000, guid: ace689db54d6bf840947f5420525f35f, type: 2}
-  nightSkybox: {fileID: 2100000, guid: ace689db54d6bf840947f5420525f35f, type: 2}
-  sunriseSkybox: {fileID: 2100000, guid: d8751cc6fa1d7974180dda3746902254, type: 2}
-  sunsetSkybox: {fileID: 2100000, guid: d8751cc6fa1d7974180dda3746902254, type: 2}
-  dayAmbient: {r: 0.5, g: 0.5, b: 0.5, a: 1}
-  nightAmbient: {r: 0.1, g: 0.1, b: 0.2, a: 1}
-  sunriseAmbient: {r: 0.4, g: 0.4, b: 0.4, a: 1}
-  sunsetAmbient: {r: 0.3, g: 0.3, b: 0.3, a: 1}
-  pitchBlackNight: 1
-  moonlightIntensity: 0
 --- !u!4 &121996062
 Transform:
   m_ObjectHideFlags: 0
