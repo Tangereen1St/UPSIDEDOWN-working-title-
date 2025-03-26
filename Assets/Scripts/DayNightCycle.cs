@@ -1,237 +1,268 @@
 using UnityEngine;
+using UnityEngine.Rendering;
+using System;
 
 public class DayNightCycle : MonoBehaviour
 {
+    public static DayNightCycle Instance { get; private set; }
+
     [Header("Time Settings")]
-    [Range(0, 24)]
-    [SerializeField] private float timeOfDay = 12f; // Current time of day (24-hour format)
-    [SerializeField] private float timeScale = 1f; // How fast time passes
-    [SerializeField] private bool freezeTime = false; // If true, time won't progress
+    [Tooltip("Duration of one full day/night cycle in seconds")]
+    public float dayDuration = 300f; // 5 minutes per day
+    [Tooltip("Current time of day (0-1)")]
+    public float currentTime = 0.5f; // Start at noon
+    [Tooltip("Start of dawn transition (0-1)")]
+    public float dawnStart = 0.19f; // Adjusted from 0.25 to match -0.06 requirement
+    [Tooltip("Start of dusk transition (0-1)")]
+    public float duskStart = 0.5f;
 
-    [Header("Lighting")]
-    [SerializeField] private Light directionalLight; // The sun
-    [SerializeField] private float maxSunIntensity = 2f; // Maximum intensity of the sun
-    [SerializeField] private float minSunIntensity = 0f; // Minimum intensity during night
-    [SerializeField] private Color dayColor = Color.white; // Color of the sun during day
-    [SerializeField] private Color sunriseColor = new Color(1f, 0.8f, 0.5f); // Color during sunrise
-    [SerializeField] private Color sunsetColor = new Color(1f, 0.5f, 0f); // Color during sunset
-    [SerializeField] private Color nightColor = Color.black; // Color during night
+    [Header("Day Counter")]
+    [Tooltip("Current day number")]
+    [SerializeField] private int _dayCount = 1; // Start on day 1
+    public int DayCount => _dayCount; // Public getter for day count
+    
+    // Event that other scripts can subscribe to
+    public event Action<int> OnDayChanged;
 
-    [Header("Skybox")]
-    [SerializeField] private Material daySkybox; // Skybox for day
-    [SerializeField] private Material nightSkybox; // Skybox for night
-    [SerializeField] private Material sunriseSkybox; // Skybox for sunrise
-    [SerializeField] private Material sunsetSkybox; // Skybox for sunset
-    private Material blendedSkybox; // Material used for transitions
-    private static readonly int BlendAmount = Shader.PropertyToID("_BlendAmount");
-    private static readonly int TransitionState = Shader.PropertyToID("_TransitionState");
+    [Header("Light Settings")]
+    public Light mainLight;
+    [Tooltip("Day light intensity")]
+    public float dayLightIntensity = 1.5f; // Increased to make distant objects more visible
+    [Tooltip("Night light intensity")]
+    public float nightLightIntensity = 0.0f; // No light during night
+    [Tooltip("Day light color")]
+    public Color dayLightColor = new Color(1f, 0.95f, 0.8f); // Warm sunlight
+    [Tooltip("Night light color")]
+    public Color nightLightColor = new Color(0.6f, 0.6f, 1f); // Cool moonlight
+    
+    [Header("Sky Settings")]
+    [Tooltip("Adjust ambient light color based on time of day")]
+    public bool updateAmbientLight = true;
+    [Tooltip("Day ambient light color")]
+    public Color dayAmbientColor = new Color(0.6f, 0.6f, 0.6f); // Increased brightness
+    [Tooltip("Night ambient light color")]
+    public Color nightAmbientColor = new Color(0f, 0f, 0f); // Completely black
+    [Tooltip("Ambient light mode")]
+    public AmbientMode ambientMode = AmbientMode.Flat;
+    [Tooltip("Day ambient intensity")]
+    public float dayAmbientIntensity = 1.2f; // Increased to improve distant visibility
+    [Tooltip("Day reflection intensity")]
+    public float dayReflectionIntensity = 1.0f;
 
-    [Header("Ambient")]
-    [SerializeField] private Color dayAmbient = new Color(0.5f, 0.5f, 0.5f);
-    [SerializeField] private Color nightAmbient = new Color(0.0f, 0.0f, 0.0f);
-    [SerializeField] private Color sunriseAmbient = new Color(0.4f, 0.4f, 0.4f);
-    [SerializeField] private Color sunsetAmbient = new Color(0.3f, 0.3f, 0.3f);
+    private float _lastTimeCheck = 0f;
+    private bool _dayChanged = false;
 
-    [Header("Night Settings")]
-    [SerializeField] private bool pitchBlackNight = true;
-    [SerializeField] private float moonlightIntensity = 0.05f;
-
-    // Events that other scripts can subscribe to
-    public delegate void TimeOfDayChanged(float timeOfDay);
-    public static event TimeOfDayChanged OnTimeOfDayChanged;
-
-    // Time constants
-    private const float NIGHT_END = 5f;      // When night ends/sunrise starts
-    private const float SUNRISE_END = 7f;    // When sunrise ends/day starts
-    private const float SUNSET_START = 17f;  // When day ends/sunset starts
-    private const float NIGHT_START = 19f;   // When sunset ends/night starts
-
-    private void Start()
+    private void Awake()
     {
-        // If no directional light is assigned, try to find one
-        if (directionalLight == null)
+        // Singleton pattern to allow easy access from other scripts
+        if (Instance == null)
         {
-            Light[] lights = FindObjectsOfType<Light>();
-            foreach (Light light in lights)
-            {
-                if (light.type == LightType.Directional)
-                {
-                    directionalLight = light;
-                    break;
-                }
-            }
-        }
-
-        // Set initial lighting
-        UpdateLighting();
-
-        // Create a new material for blending if all skyboxes are assigned
-        if (daySkybox != null && nightSkybox != null && sunriseSkybox != null && sunsetSkybox != null)
-        {
-            // Create a new blended skybox material
-            blendedSkybox = new Material(Shader.Find("Custom/SkyboxBlend"));
-            if (blendedSkybox != null)
-            {
-                // Get the main texture from each skybox
-                Texture dayTex = daySkybox.GetTexture("_MainTex");
-                Texture nightTex = nightSkybox.GetTexture("_MainTex");
-                Texture sunriseTex = sunriseSkybox.GetTexture("_MainTex");
-                Texture sunsetTex = sunsetSkybox.GetTexture("_MainTex");
-
-                if (dayTex != null && nightTex != null && sunriseTex != null && sunsetTex != null)
-                {
-                    // Set the textures in our blend shader
-                    blendedSkybox.SetTexture("_DayTex", dayTex);
-                    blendedSkybox.SetTexture("_NightTex", nightTex);
-                    blendedSkybox.SetTexture("_SunriseTex", sunriseTex);
-                    blendedSkybox.SetTexture("_SunsetTex", sunsetTex);
-
-                    // Copy exposure values if they exist
-                    if (daySkybox.HasProperty("_Exposure"))
-                        blendedSkybox.SetFloat("_DayExposure", daySkybox.GetFloat("_Exposure"));
-                    if (nightSkybox.HasProperty("_Exposure"))
-                        blendedSkybox.SetFloat("_NightExposure", nightSkybox.GetFloat("_Exposure"));
-                    if (sunriseSkybox.HasProperty("_Exposure"))
-                        blendedSkybox.SetFloat("_SunriseExposure", sunriseSkybox.GetFloat("_Exposure"));
-                    if (sunsetSkybox.HasProperty("_Exposure"))
-                        blendedSkybox.SetFloat("_SunsetExposure", sunsetSkybox.GetFloat("_Exposure"));
-
-                    // Set initial blend values
-                    blendedSkybox.SetFloat(BlendAmount, 0);
-                    blendedSkybox.SetFloat(TransitionState, 0);
-                    RenderSettings.skybox = blendedSkybox;
-                }
-                else
-                {
-                    Debug.LogError("Could not find main texture in one or more skybox materials. Make sure they are properly set up.");
-                }
-            }
-            else
-            {
-                Debug.LogError("Failed to find Custom/SkyboxBlend shader. Make sure it's included in your project.");
-            }
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
         }
         else
         {
-            Debug.LogWarning("One or more skybox materials not assigned. Skybox blending will be disabled.");
+            Destroy(gameObject);
         }
+    }
+
+    private void Start()
+    {
+        if (mainLight == null)
+        {
+            Debug.LogError("Please assign a main directional light in the inspector!");
+            enabled = false;
+            return;
+        }
+
+        // Set ambient mode
+        RenderSettings.ambientMode = ambientMode;
+
+        // Store the current time to check for day changes
+        _lastTimeCheck = currentTime;
+
+        UpdateLighting();
     }
 
     private void Update()
     {
-        if (!freezeTime)
+        // Save the previous time to check for day changes
+        _lastTimeCheck = currentTime;
+
+        // Update time
+        currentTime += Time.deltaTime / dayDuration;
+        
+        // Check for day change (when we cross midnight)
+        if (currentTime >= 1f)
         {
-            // Update time of day
-            timeOfDay += Time.deltaTime * timeScale / 60f; // Divide by 60 to convert to hours
+            currentTime = 0f;
+            _dayCount++;
+            _dayChanged = true;
             
-            // Wrap time of day between 0 and 24
-            if (timeOfDay >= 24f)
-            {
-                timeOfDay -= 24f;
-            }
+            // Notify subscribers that the day has changed
+            OnDayChanged?.Invoke(_dayCount);
+            
+            Debug.Log($"Day changed to {_dayCount}");
         }
 
-        // Update lighting based on time of day
+        // Update lighting
         UpdateLighting();
-
-        // Trigger event for other scripts
-        OnTimeOfDayChanged?.Invoke(timeOfDay);
     }
 
     private void UpdateLighting()
     {
-        if (directionalLight == null) return;
+        // Calculate light rotation (0-360 degrees)
+        float lightRotation = currentTime * 360f;
 
-        // Calculate sun rotation
-        float sunRotation = (timeOfDay / 24f) * 360f;
-        directionalLight.transform.rotation = Quaternion.Euler(sunRotation - 90f, 170f, 0);
-
-        // Calculate which transition period we're in and the blend amount
-        float transitionState;
-        float blendAmount;
-        Color targetAmbient;
-        float intensity;
+        // Update light rotation
+        // Adjust angle to ensure light hits distant mountains
+        mainLight.transform.rotation = Quaternion.Euler(lightRotation, 170f, 0f);
+        
+        // Transition duration in time units
+        float dawnDuration = duskStart - dawnStart;
+        float duskDuration = (1.0f - duskStart) + dawnStart; // Wraps around from dusk to dawn
+        
+        // Calculate light intensity based on time of day
+        float lightIntensity;
         Color lightColor;
+        Color ambientColor;
+        float ambientIntensity;
+        float reflectionIntensity;
 
-        if (timeOfDay < NIGHT_END) // Night
+        if (currentTime < dawnStart || currentTime > duskStart) // Night
         {
-            transitionState = 0;
-            blendAmount = timeOfDay / NIGHT_END;
-            intensity = pitchBlackNight ? 0f : moonlightIntensity;
-            lightColor = nightColor;
-            targetAmbient = nightAmbient;
+            // For the exact dawn start time (-0.06 converted to the 0-1 range)
+            if (currentTime < dawnStart)
+            {
+                // Calculate how close we are to dawn
+                float nightProgress = 1.0f - (currentTime / dawnStart);
+                lightIntensity = nightLightIntensity;
+                lightColor = nightLightColor;
+                ambientColor = nightAmbientColor;
+                ambientIntensity = 0f;
+                reflectionIntensity = 0f;
+            }
+            else // After dusk
+            {
+                float nightProgress = (currentTime - duskStart) / (1.0f - duskStart);
+                lightIntensity = nightLightIntensity;
+                lightColor = nightLightColor;
+                ambientColor = nightAmbientColor;
+                ambientIntensity = 0f;
+                reflectionIntensity = 0f;
+            }
         }
-        else if (timeOfDay < SUNRISE_END) // Sunrise
+        else if (currentTime < duskStart) // Dawn to Day to Dusk
         {
-            transitionState = 1;
-            blendAmount = (timeOfDay - NIGHT_END) / (SUNRISE_END - NIGHT_END);
-            intensity = Mathf.Lerp(moonlightIntensity, maxSunIntensity, blendAmount);
-            lightColor = Color.Lerp(sunriseColor, dayColor, blendAmount);
-            targetAmbient = Color.Lerp(sunriseAmbient, dayAmbient, blendAmount);
+            // In the "daytime" range
+            if (currentTime < (dawnStart + dawnDuration * 0.3f)) // Dawn transition
+            {
+                float transitionProgress = (currentTime - dawnStart) / (dawnDuration * 0.3f);
+                lightIntensity = Mathf.Lerp(nightLightIntensity, dayLightIntensity, transitionProgress);
+                lightColor = Color.Lerp(nightLightColor, dayLightColor, transitionProgress);
+                ambientColor = Color.Lerp(nightAmbientColor, dayAmbientColor, transitionProgress);
+                ambientIntensity = Mathf.Lerp(0f, dayAmbientIntensity, transitionProgress);
+                reflectionIntensity = Mathf.Lerp(0f, dayReflectionIntensity, transitionProgress);
+            }
+            else if (currentTime < (duskStart - dawnDuration * 0.3f)) // Full day
+            {
+                lightIntensity = dayLightIntensity;
+                lightColor = dayLightColor;
+                ambientColor = dayAmbientColor;
+                ambientIntensity = dayAmbientIntensity;
+                reflectionIntensity = dayReflectionIntensity;
+            }
+            else // Dusk transition
+            {
+                float transitionProgress = (currentTime - (duskStart - dawnDuration * 0.3f)) / (dawnDuration * 0.3f);
+                lightIntensity = Mathf.Lerp(dayLightIntensity, nightLightIntensity, transitionProgress);
+                lightColor = Color.Lerp(dayLightColor, nightLightColor, transitionProgress);
+                ambientColor = Color.Lerp(dayAmbientColor, nightAmbientColor, transitionProgress);
+                ambientIntensity = Mathf.Lerp(dayAmbientIntensity, 0f, transitionProgress);
+                reflectionIntensity = Mathf.Lerp(dayReflectionIntensity, 0f, transitionProgress);
+            }
         }
-        else if (timeOfDay < SUNSET_START) // Day
+        else // Should never happen but just in case
         {
-            transitionState = 2;
-            blendAmount = (timeOfDay - SUNRISE_END) / (SUNSET_START - SUNRISE_END);
-            intensity = maxSunIntensity;
-            lightColor = dayColor;
-            targetAmbient = dayAmbient;
-        }
-        else if (timeOfDay < NIGHT_START) // Sunset
-        {
-            transitionState = 3;
-            blendAmount = (timeOfDay - SUNSET_START) / (NIGHT_START - SUNSET_START);
-            intensity = Mathf.Lerp(maxSunIntensity, moonlightIntensity, blendAmount);
-            lightColor = Color.Lerp(dayColor, sunsetColor, blendAmount);
-            targetAmbient = Color.Lerp(dayAmbient, sunsetAmbient, blendAmount);
-        }
-        else // Night
-        {
-            transitionState = 0;
-            blendAmount = 0;
-            intensity = pitchBlackNight ? 0f : moonlightIntensity;
-            lightColor = nightColor;
-            targetAmbient = nightAmbient;
+            lightIntensity = dayLightIntensity;
+            lightColor = dayLightColor;
+            ambientColor = dayAmbientColor;
+            ambientIntensity = dayAmbientIntensity;
+            reflectionIntensity = dayReflectionIntensity;
         }
 
-        // Apply calculated values
-        directionalLight.intensity = intensity;
-        directionalLight.color = lightColor;
-        RenderSettings.ambientLight = targetAmbient;
-
-        // Update skybox if available
-        if (blendedSkybox != null)
+        // Apply light properties
+        mainLight.intensity = lightIntensity;
+        mainLight.color = lightColor;
+        
+        // Update ambient lighting
+        if (updateAmbientLight)
         {
-            blendedSkybox.SetFloat(TransitionState, transitionState);
-            blendedSkybox.SetFloat(BlendAmount, blendAmount);
+            RenderSettings.ambientLight = ambientColor;
+            RenderSettings.ambientIntensity = ambientIntensity;
+            RenderSettings.reflectionIntensity = reflectionIntensity;
+        }
+
+        // Only log on day change to reduce console spam
+        if (_dayChanged)
+        {
+            Debug.Log($"Day: {_dayCount}, Time: {currentTime:F2}, Light: {lightIntensity:F2}");
+            _dayChanged = false;
         }
     }
 
-    // Public methods to control time
-    public void SetTimeOfDay(float newTime)
+    // Public methods to access day and time info
+    
+    /// <summary>
+    /// Get the current day count (starts at 1)
+    /// </summary>
+    public int GetCurrentDay()
     {
-        timeOfDay = Mathf.Clamp(newTime, 0f, 24f);
-        UpdateLighting();
+        return _dayCount;
     }
 
-    public float GetTimeOfDay()
+    /// <summary>
+    /// Set the current day count
+    /// </summary>
+    public void SetDay(int day)
     {
-        return timeOfDay;
+        if (day < 1)
+        {
+            Debug.LogWarning("Day count cannot be less than 1. Setting to day 1.");
+            day = 1;
+        }
+        
+        if (_dayCount != day)
+        {
+            _dayCount = day;
+            OnDayChanged?.Invoke(_dayCount);
+        }
     }
 
-    public void SetTimeScale(float scale)
+    /// <summary>
+    /// Returns true if it's currently daytime (between dawn and dusk)
+    /// </summary>
+    public bool IsDaytime()
     {
-        timeScale = scale;
-    }
-
-    public void FreezeTime(bool freeze)
-    {
-        freezeTime = freeze;
+        return currentTime >= dawnStart && currentTime <= duskStart;
     }
     
-    public void SetPitchBlackNight(bool enabled)
+    /// <summary>
+    /// Returns true if it's currently nighttime
+    /// </summary>
+    public bool IsNighttime()
     {
-        pitchBlackNight = enabled;
+        return !IsDaytime();
+    }
+
+    /// <summary>
+    /// Skip to the next day
+    /// </summary>
+    public void SkipToNextDay()
+    {
+        _dayCount++;
+        currentTime = dawnStart + 0.01f; // Just after dawn
+        OnDayChanged?.Invoke(_dayCount);
         UpdateLighting();
     }
 } 
