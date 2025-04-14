@@ -1,5 +1,14 @@
 {
   "dependencies": {
+    "com.crashkonijn.goap": {
+      "version": "https://github.com/crashkonijn/GOAP.git?path=/Package#3.0.31",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.collections": "1.2.4"
+      },
+      "hash": "130a00fc1b8c63b95989e785fc8d54bbfda27279"
+    },
     "com.unity.ai.navigation": {
       "version": "2.0.6",
       "depth": 0,
@@ -28,7 +37,7 @@
     },
     "com.unity.collections": {
       "version": "2.5.1",
-      "depth": 2,
+      "depth": 1,
       "source": "registry",
       "dependencies": {
         "com.unity.burst": "1.8.17",
@@ -89,7 +98,7 @@
     },
     "com.unity.nuget.mono-cecil": {
       "version": "1.11.4",
-      "depth": 3,
+      "depth": 2,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
@@ -166,7 +175,7 @@
     },
     "com.unity.test-framework.performance": {
       "version": "3.0.3",
-      "depth": 3,
+      "depth": 2,
       "source": "registry",
       "dependencies": {
         "com.unity.test-framework": "1.1.31",
